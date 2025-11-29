@@ -1,0 +1,24 @@
+CHURN PREDICTION MODEL PERFORMANCE
+============================================================
+
+Best Model: Logistic Regression
+Training Date: 2025-11-29 16:45:57
+
+METRICS:
+  Accuracy:  0.8006
+  Precision: 0.6332
+  Recall:    0.5909
+  F1 Score:  0.6113
+  ROC-AUC:   0.8487
+
+DATASET:
+  Total samples: 7,043
+  Training samples: 8,278
+  Test samples: 1,409
+  Number of features: 57
+
+CONFUSION MATRIX:
+  True Negatives:  907
+  False Positives: 128
+  False Negatives: 153
+  True Positives:  221
