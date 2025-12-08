@@ -19,9 +19,10 @@ A comprehensive big data platform for predicting customer churn using heterogene
 
 ### Technology Stack
 - **Databases:** PostgreSQL (structured), Cassandra (time-series/unstructured)
+- **Storage:** Hadoop HDFS (distributed file system)
 - **Streaming:** Apache Kafka
-- **Processing:** Python, Pandas
-- **ML:** Scikit-learn, XGBoost
+- **Processing:** Apache Spark (PySpark), Python, Pandas
+- **ML:** Spark MLlib, Scikit-learn, XGBoost
 - **API:** FastAPI
 - **Dashboard:** Streamlit
 - **Environment:** Oracle VirtualBox (Ubuntu 22.04 LTS)
@@ -32,16 +33,25 @@ A comprehensive big data platform for predicting customer churn using heterogene
 ```
 Data Sources → Ingestion → Storage → Processing → ML → API/Dashboard
                   ↓           ↓          ↓        ↓        ↓
-              Kafka      PostgreSQL   Pandas   XGBoost  FastAPI
-                         Cassandra              Models   Streamlit
+              Kafka      PostgreSQL   Spark    MLlib   FastAPI
+                         Cassandra    HDFS     Models   Streamlit
 ```
 
 **Components:**
 - **PostgreSQL**: 7,043 customer profiles (structured data)
 - **Cassandra**: Event logs & support tickets (time-series/unstructured)
+- **Hadoop HDFS**: Distributed storage for raw and processed data
+- **Apache Spark**: Distributed data processing and ML training
 - **Kafka**: Real-time event streaming
-- **Python**: ETL, feature engineering, ML training
+- **Python/PySpark**: ETL, feature engineering, ML training
 - **Docker**: Service orchestration
+
+**Data Flow:**
+1. **Ingestion**: Raw data → PostgreSQL/Cassandra + HDFS
+2. **Storage**: HDFS stores raw datasets and processed features
+3. **Processing**: Spark reads from HDFS/PostgreSQL/Cassandra → Feature engineering → Write to HDFS
+4. **ML Training**: Spark MLlib trains models on distributed data
+5. **Serving**: FastAPI/Streamlit serve predictions
 
 ---
 
@@ -74,16 +84,22 @@ churnguard-platform/
 ├── src/                         # Source code
 │   ├── db_postgres.py           # PostgreSQL handler
 │   ├── db_cassandra.py          # Cassandra handler
-│   ├── ingest.py                # Data ingestion
-│   ├── process.py               # ETL & feature engineering
-│   ├── train.py                 # Model training
+│   ├── db_hdfs.py               # HDFS handler
+│   ├── ingest.py                # Data ingestion (PostgreSQL/Cassandra)
+│   ├── ingest_hdfs.py           # HDFS data ingestion
+│   ├── process.py               # ETL & feature engineering (Pandas)
+│   ├── process_spark.py         # ETL & feature engineering (Spark)
+│   ├── train.py                 # Model training (Scikit-learn)
+│   ├── train_spark.py           # Model training (Spark MLlib)
 │   ├── predict.py               # Inference service
 │   ├── kafka_producer.py        # Event simulator
 │   ├── kafka_consumer.py        # Stream processor
 │   └── api.py                   # FastAPI endpoints
 │
 ├── dashboard/
-│   └── app.py                   # Streamlit dashboard
+│   ├── app.py                   # Streamlit dashboard
+│   ├── predict_helper.py        # Prediction helper
+│   └── data_processor.py        # Data processing for uploads
 │
 ├── tests/
 │   └── test_pipeline.py
@@ -125,6 +141,10 @@ Settings → Network → Adapter 1 → Advanced → Port Forwarding
 | PostgreSQL | 5432 | 5432 |
 | Cassandra | 9042 | 9042 |
 | Kafka | 9092 | 9092 |
+| HDFS NameNode | 9870 | 9870 |
+| HDFS DataNode | 9864 | 9864 |
+| Spark Master | 8080 | 8080 |
+| Spark Worker | 8081 | 8081 |
 | API | 8000 | 8000 |
 | Dashboard | 8501 | 8501 |
 | SSH | 2222 | 22 |
@@ -231,16 +251,19 @@ Paste content (see .gitignore section below), then save and exit.
 
 ### **STEP 6: Start Docker Services**
 ```bash
-# Start all services (first time will download images - takes 3-5 minutes)
+# Start all services (first time will download images - takes 5-10 minutes)
 docker compose up -d
 
-# Wait for services to initialize
-sleep 30
+# Wait for services to initialize (HDFS and Spark take longer)
+sleep 60
 
 # Verify all services are running
 docker compose ps
 
-# Expected output: 4 containers (postgres, cassandra, kafka, zookeeper) with status "Up"
+# Expected output: 8 containers with status "Up":
+# - postgres, cassandra, kafka, zookeeper
+# - namenode, datanode (HDFS)
+# - spark-master, spark-worker (Spark)
 ```
 
 ---
@@ -299,7 +322,7 @@ Paste content (see src/ingest.py section below), then save and exit.
 
 ---
 
-### **STEP 10: Initialize Databases**
+### **STEP 10: Initialize Databases and HDFS**
 ```bash
 # Test PostgreSQL connection
 python src/db_postgres.py --test
@@ -316,6 +339,14 @@ python src/db_cassandra.py --test
 # Initialize Cassandra schema
 python src/db_cassandra.py --init
 # Expected: ✓ Keyspace and tables created
+
+# Test HDFS connection
+python src/db_hdfs.py --test
+# Expected: ✓ Connected to HDFS
+
+# Initialize HDFS directories
+python src/db_hdfs.py --init
+# Expected: ✓ HDFS directory structure initialized
 ```
 
 ---
@@ -325,6 +356,10 @@ python src/db_cassandra.py --init
 # Load customer data into PostgreSQL
 python src/ingest.py --batch data/raw/telco_churn.csv
 # Expected: ✓ Inserted 7043 customers into PostgreSQL
+
+# Upload dataset to HDFS
+python src/ingest_hdfs.py --upload
+# Expected: ✓ Uploaded to HDFS: hdfs://namenode:9000/churnguard/data/raw/telco_churn.csv
 
 # Generate sample events in Cassandra
 python src/ingest.py --events 100
@@ -337,7 +372,28 @@ python src/ingest.py --tickets 50
 
 ---
 
-### **STEP 12: Verify Everything**
+### **STEP 12: Process Data with Spark (Optional)**
+```bash
+# Process data using Spark (distributed processing)
+python src/process_spark.py --run
+# Expected: ✓ Spark processing complete, data saved to HDFS
+
+# Or use traditional Pandas processing
+python src/process.py --run
+# Expected: ✓ Processing complete, saved to data/processed/
+```
+
+### **STEP 13: Train Models with Spark MLlib (Optional)**
+```bash
+# Train models using Spark MLlib (distributed ML)
+python src/train_spark.py --run
+# Expected: ✓ Spark ML training complete, models saved
+
+# Or use traditional Scikit-learn training
+# (Run notebooks/03_model_training.ipynb in Jupyter)
+```
+
+### **STEP 14: Verify Everything**
 ```bash
 # Check all Docker containers are running
 docker compose ps
@@ -345,9 +401,10 @@ docker compose ps
 # Test database connections
 python src/db_postgres.py --test
 python src/db_cassandra.py --test
+python src/db_hdfs.py --test
 
-# Check data loaded
-# (We'll add query scripts later)
+# List HDFS files
+python src/db_hdfs.py --list /churnguard/data/raw
 ```
 
 ---
@@ -365,6 +422,18 @@ python src/db_cassandra.py --test
 - **Tables:**
   - `customer_events`: 100 time-series events (logins, payments, support calls)
   - `support_tickets`: 50 support tickets with descriptions and sentiment
+
+### Hadoop HDFS (Distributed Storage)
+- **Base Path:** `/churnguard`
+- **Raw Data:** `/churnguard/data/raw/telco_churn.csv`
+- **Processed Data:** `/churnguard/data/processed/` (Parquet format)
+- **Models:** `/churnguard/models/` (Spark MLlib models)
+
+### Spark (Distributed Processing)
+- **Master:** spark://spark-master:7077
+- **Workers:** 1 worker with 2 cores, 2GB memory
+- **Processing:** Distributed ETL and feature engineering
+- **ML Training:** Spark MLlib (Logistic Regression, Random Forest, GBT)
 
 ---
 
@@ -407,15 +476,47 @@ pip freeze > requirements.txt  # Update requirements
 # Test connections
 python src/db_postgres.py --test
 python src/db_cassandra.py --test
+python src/db_hdfs.py --test
 
 # Re-initialize schemas (WARNING: drops existing data)
 python src/db_postgres.py --init
 python src/db_cassandra.py --init
+python src/db_hdfs.py --init
 
 # Load data
 python src/ingest.py --batch data/raw/telco_churn.csv
+python src/ingest_hdfs.py --upload
 python src/ingest.py --events 100
 python src/ingest.py --tickets 50
+```
+
+### Spark Operations
+```bash
+# Process data with Spark
+python src/process_spark.py --run
+
+# Train models with Spark MLlib
+python src/train_spark.py --run
+
+# Access Spark Web UI
+# Master: http://localhost:8080
+# Worker: http://localhost:8081
+```
+
+### HDFS Operations
+```bash
+# List HDFS files
+python src/db_hdfs.py --list /churnguard/data/raw
+
+# Upload file to HDFS
+python src/db_hdfs.py --upload <local_path> <hdfs_path>
+
+# Download file from HDFS
+python src/db_hdfs.py --download <hdfs_path> <local_path>
+
+# Access HDFS Web UI
+# NameNode: http://localhost:9870
+# DataNode: http://localhost:9864
 ```
 
 ---
@@ -470,16 +571,29 @@ pip install -r requirements.txt --force-reinstall
 
 ---
 
-## 📝 What's Next (To Be Implemented)
+## 📝 Implementation Status
 
-- [ ] Kafka producer for real-time event simulation
-- [ ] Kafka consumer for stream processing
-- [ ] Data processing & feature engineering script
-- [ ] Jupyter notebooks for EDA and ML
-- [ ] Model training pipeline (XGBoost)
-- [ ] FastAPI REST endpoints
-- [ ] Streamlit dashboard
-- [ ] Phase 1 documentation (business requirements, architecture)
+### ✅ Completed
+- [x] PostgreSQL database setup and ingestion
+- [x] Cassandra database setup and ingestion
+- [x] Hadoop HDFS setup and data ingestion
+- [x] Apache Spark cluster setup
+- [x] Spark-based data processing pipeline
+- [x] Spark MLlib model training
+- [x] Kafka producer for real-time event simulation
+- [x] Kafka consumer for stream processing
+- [x] Data processing & feature engineering (both Pandas and Spark)
+- [x] Jupyter notebooks for EDA and ML
+- [x] Model training pipeline (Scikit-learn and Spark MLlib)
+- [x] FastAPI REST endpoints
+- [x] Streamlit dashboard
+- [x] Phase 1 documentation (business requirements, architecture)
+
+### 🔄 In Progress / Future Enhancements
+- [ ] Spark Streaming for real-time Kafka processing
+- [ ] Spark SQL for advanced analytics
+- [ ] Model serving with Spark MLlib
+- [ ] Performance optimization for large-scale data
 - [ ] Phase 2 presentation slides
 
 ---
@@ -498,6 +612,9 @@ pip install -r requirements.txt --force-reinstall
 - Docker: https://docs.docker.com/
 - PostgreSQL: https://www.postgresql.org/docs/
 - Cassandra: https://cassandra.apache.org/doc/latest/
+- Hadoop HDFS: https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsUserGuide.html
+- Apache Spark: https://spark.apache.org/docs/latest/
+- PySpark: https://spark.apache.org/docs/latest/api/python/
 - Kafka: https://kafka.apache.org/documentation/
 - FastAPI: https://fastapi.tiangolo.com/
 - Streamlit: https://docs.streamlit.io/

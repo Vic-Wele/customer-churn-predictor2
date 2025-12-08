@@ -32,7 +32,10 @@ docker compose up -d
 docker compose ps
 ```
 
-**Expected:** 4 containers running (postgres, cassandra, kafka, zookeeper)
+**Expected:** 8 containers running:
+- postgres, cassandra, kafka, zookeeper
+- namenode, datanode (HDFS)
+- spark-master, spark-worker (Spark)
 
 ---
 
@@ -43,9 +46,12 @@ python src/db_postgres.py --test
 
 # Test Cassandra
 python src/db_cassandra.py --test
+
+# Test HDFS
+python src/db_hdfs.py --test
 ```
 
-**Expected:** Both should show "✓ Connected"
+**Expected:** All should show "✓ Connected"
 
 ---
 
@@ -64,6 +70,7 @@ streamlit run app.py
 - 🔍 Customer Lookup - Predict churn for individual customers
 - ⚠️ High-Risk Customers - Find customers likely to churn
 - 📈 Analytics - Data visualizations and trends
+- 📤 Upload & Process - Upload new CSV files, process data, train models, and generate insights
 
 ---
 
@@ -151,6 +158,19 @@ jupyter notebook --no-browser --ip=0.0.0.0 --port=8888
 ## 🔄 Reprocessing Data (if needed)
 
 ### Re-run Data Processing Pipeline
+
+**Option 1: Using Spark (Distributed Processing)**
+```bash
+cd ~/churnguard-platform
+python src/process_spark.py --run
+```
+
+**This:**
+- Processes data using Spark cluster
+- Saves to HDFS (Parquet format)
+- Also saves local CSV for compatibility
+
+**Option 2: Using Pandas (Traditional)**
 ```bash
 cd ~/churnguard-platform
 python src/process.py --run
@@ -164,6 +184,9 @@ python src/process.py --run
 ```bash
 # Load customer data into PostgreSQL
 python src/ingest.py --batch data/raw/telco_churn.csv
+
+# Upload dataset to HDFS
+python src/ingest_hdfs.py --upload
 
 # Load events into Cassandra
 python src/ingest.py --events 100
@@ -338,19 +361,33 @@ churnguard-platform/
 ├── src/                     # All Python scripts
 │   ├── api.py              # FastAPI server
 │   ├── predict.py          # Prediction service
-│   ├── process.py          # Data processing
+│   ├── process.py          # Data processing (Pandas)
+│   ├── process_spark.py    # Data processing (Spark)
+│   ├── train_spark.py      # ML training (Spark MLlib)
+│   ├── db_hdfs.py          # HDFS handler
+│   ├── ingest_hdfs.py      # HDFS ingestion
 │   ├── kafka_producer.py   # Event producer
 │   └── kafka_consumer.py   # Event consumer
 │
 ├── dashboard/              # Streamlit dashboard
 │   └── app.py
 │
-├── docs/                   # Documentation (to be created)
+├── docs/                   # Documentation
 │
 ├── docker-compose.yml      # Docker services config
 ├── requirements.txt        # Python dependencies
 └── README.md              # Main documentation
 ```
+
+## 🌐 Web UIs
+
+**Access these in your browser:**
+- **HDFS NameNode UI:** http://localhost:9870
+- **HDFS DataNode UI:** http://localhost:9864
+- **Spark Master UI:** http://localhost:8080
+- **Spark Worker UI:** http://localhost:8081
+- **Dashboard:** http://localhost:8501
+- **API Docs:** http://localhost:8000/docs
 
 ---
 
@@ -376,7 +413,23 @@ pip list                     # List installed packages
 ```bash
 python src/db_postgres.py --test   # Test PostgreSQL
 python src/db_cassandra.py --test  # Test Cassandra
+python src/db_hdfs.py --test       # Test HDFS
 python src/verify_data.py          # Check all data
+```
+
+### Spark & HDFS
+```bash
+# Process data with Spark
+python src/process_spark.py --run
+
+# Train models with Spark MLlib
+python src/train_spark.py --run
+
+# Upload data to HDFS
+python src/ingest_hdfs.py --upload
+
+# List HDFS files
+python src/db_hdfs.py --list /churnguard/data/raw
 ```
 
 ### Prediction

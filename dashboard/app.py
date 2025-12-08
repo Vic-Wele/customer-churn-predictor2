@@ -5,8 +5,14 @@ import plotly.graph_objects as go
 import psycopg2
 import os
 import sys
+from datetime import datetime
 sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('.'))
 from predict_helper import ChurnPredictor
+from data_processor import (
+    validate_uploaded_data, process_uploaded_data,
+    train_models_on_data, generate_insights, save_to_database
+)
 import numpy as np
 
 # Page config
@@ -113,7 +119,8 @@ def main():
         "🏠 Overview",
         "🔍 Customer Lookup",
         "⚠️ High-Risk Customers",
-        "📈 Analytics"
+        "📈 Analytics",
+        "📤 Upload & Process"
     ])
     
     st.sidebar.markdown("---")
@@ -136,6 +143,8 @@ def main():
         show_high_risk_customers(predictor)
     elif page == "📈 Analytics":
         show_analytics()
+    elif page == "📤 Upload & Process":
+        show_upload_process()
 
 def show_overview(stats):
     """Overview page with key metrics"""
@@ -441,6 +450,316 @@ def show_analytics():
         st.error(f"Error loading analytics: {e}")
         import traceback
         st.code(traceback.format_exc())
+
+def show_upload_process():
+    """Upload, process, train, and generate insights page"""
+    st.header("📤 Upload & Process Data")
+    st.markdown("Upload a new customer churn dataset to process, train models, and generate insights.")
+    
+    # File upload section
+    st.subheader("📁 Upload Data File")
+    
+    uploaded_file = st.file_uploader(
+        "Choose a CSV file",
+        type=['csv'],
+        help="Upload a CSV file with customer churn data. Required columns: customerID, gender, SeniorCitizen, Partner, Dependents, tenure, PhoneService, MultipleLines, InternetService, OnlineSecurity, OnlineBackup, DeviceProtection, TechSupport, StreamingTV, StreamingMovies, Contract, PaperlessBilling, PaymentMethod, MonthlyCharges, TotalCharges, Churn"
+    )
+    
+    if uploaded_file is not None:
+        # Processing options
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            use_spark = st.checkbox(
+                "Use Spark for Processing",
+                value=False,
+                help="Use Apache Spark for distributed processing (recommended for large datasets >10K rows)"
+            )
+        
+        with col2:
+            save_to_db = st.checkbox(
+                "Save to Database",
+                value=True,
+                help="Save processed data to PostgreSQL database"
+            )
+        
+        # Process button
+        if st.button("🚀 Process & Train Models", type="primary", use_container_width=True):
+            process_uploaded_file(uploaded_file, use_spark, save_to_db)
+
+def process_uploaded_file(uploaded_file, use_spark, save_to_db):
+    """Process uploaded file and show results"""
+    
+    # Step 1: Load and validate
+    with st.spinner("📥 Loading uploaded file..."):
+        try:
+            df = pd.read_csv(uploaded_file)
+            st.success(f"✓ File loaded: {len(df):,} rows, {len(df.columns)} columns")
+        except Exception as e:
+            st.error(f"✗ Error loading file: {e}")
+            return
+    
+    # Step 2: Validate
+    with st.spinner("🔍 Validating data..."):
+        is_valid, message = validate_uploaded_data(df)
+        if not is_valid:
+            st.error(f"✗ Validation failed: {message}")
+            st.info("Please ensure your CSV file has all required columns. See help text above.")
+            return
+        st.success(f"✓ {message}")
+    
+    # Show data preview
+    with st.expander("📋 Preview Uploaded Data"):
+        st.dataframe(df.head(10), use_container_width=True)
+        st.caption(f"Total rows: {len(df):,}")
+    
+    # Step 3: Process data
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    status_text.text("⚙️ Processing data...")
+    progress_bar.progress(20)
+    
+    try:
+        df_processed = process_uploaded_data(df, use_spark=use_spark)
+        progress_bar.progress(40)
+        status_text.text("✓ Data processed successfully")
+        st.success(f"✓ Processed {len(df_processed):,} records with {len(df_processed.columns)} features")
+    except Exception as e:
+        st.error(f"✗ Processing failed: {e}")
+        import traceback
+        with st.expander("Error Details"):
+            st.code(traceback.format_exc())
+        return
+    
+    # Step 4: Train models
+    status_text.text("🎯 Training ML models...")
+    progress_bar.progress(60)
+    
+    try:
+        model_results, feature_cols = train_models_on_data(df_processed, save_models=True)
+        progress_bar.progress(80)
+        status_text.text("✓ Models trained successfully")
+        
+        # Display model performance
+        st.subheader("📊 Model Performance")
+        
+        col1, col2 = st.columns(2)
+        
+        for model_name, results in model_results.items():
+            with col1 if list(model_results.keys()).index(model_name) % 2 == 0 else col2:
+                st.metric(
+                    label=f"{model_name}",
+                    value=f"{results['accuracy']:.1%}",
+                    delta=f"ROC-AUC: {results['roc_auc']:.3f}"
+                )
+        
+        # Best model
+        best_model = max(model_results.keys(), key=lambda k: model_results[k]['roc_auc'])
+        st.info(f"🏆 **Best Model:** {best_model} (ROC-AUC: {model_results[best_model]['roc_auc']:.3f})")
+        
+    except Exception as e:
+        st.error(f"✗ Model training failed: {e}")
+        import traceback
+        with st.expander("Error Details"):
+            st.code(traceback.format_exc())
+        return
+    
+    # Step 5: Generate insights
+    status_text.text("💡 Generating insights...")
+    progress_bar.progress(90)
+    
+    try:
+        insights = generate_insights(df_processed, model_results)
+        progress_bar.progress(100)
+        status_text.text("✓ Insights generated")
+        
+        # Display insights
+        display_insights(insights, df_processed)
+        
+    except Exception as e:
+        st.warning(f"⚠ Insights generation had issues: {e}")
+        insights = None
+    
+    # Step 6: Save to database
+    if save_to_db:
+        status_text.text("💾 Saving to database...")
+        try:
+            success = save_to_database(df_processed)
+            if success:
+                st.success("✓ Data saved to PostgreSQL database")
+            else:
+                st.warning("⚠ Some issues saving to database")
+        except Exception as e:
+            st.warning(f"⚠ Database save had issues: {e}")
+    
+    # Final status
+    progress_bar.empty()
+    status_text.empty()
+    
+    st.success("🎉 **Processing Complete!**")
+    st.balloons()
+    
+    # Summary card
+    st.subheader("📋 Processing Summary")
+    summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
+    
+    with summary_col1:
+        st.metric("Records Processed", f"{len(df_processed):,}")
+    
+    with summary_col2:
+        if insights:
+            st.metric("Churn Rate", f"{insights['data_summary']['churn_rate']:.1%}")
+    
+    with summary_col3:
+        if insights:
+            st.metric("Best Model AUC", f"{insights['model_performance']['roc_auc']:.3f}")
+    
+    with summary_col4:
+        st.metric("Features", len(feature_cols))
+
+def display_insights(insights, df_processed):
+    """Display generated insights with visualizations"""
+    st.subheader("💡 Data Insights")
+    
+    # Key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "Total Customers",
+            f"{insights['data_summary']['total_customers']:,}"
+        )
+    
+    with col2:
+        st.metric(
+            "Churned",
+            f"{insights['data_summary']['churned']:,}",
+            delta=f"{insights['data_summary']['churn_rate']:.1%}"
+        )
+    
+    with col3:
+        st.metric(
+            "Retained",
+            f"{insights['data_summary']['retained']:,}",
+            delta=f"{(1-insights['data_summary']['churn_rate']):.1%}"
+        )
+    
+    with col4:
+        st.metric(
+            "Model Accuracy",
+            f"{insights['model_performance']['accuracy']:.1%}"
+        )
+    
+    # Key findings
+    st.subheader("🔍 Key Findings")
+    for finding in insights['key_findings']:
+        st.markdown(f"- {finding}")
+    
+    # Visualizations
+    st.subheader("📊 Churn Analysis")
+    
+    # Churn distribution
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Churn Distribution**")
+        fig = go.Figure(data=[go.Pie(
+            labels=['Retained', 'Churned'],
+            values=[
+                insights['data_summary']['retained'],
+                insights['data_summary']['churned']
+            ],
+            hole=0.4,
+            marker_colors=['#2ca02c', '#d62728']
+        )])
+        fig.update_layout(height=300)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.markdown("**Model Performance Metrics**")
+        metrics_df = pd.DataFrame({
+            'Metric': ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'ROC-AUC'],
+            'Value': [
+                insights['model_performance']['accuracy'],
+                insights['model_performance']['precision'],
+                insights['model_performance']['recall'],
+                (2 * insights['model_performance']['precision'] * insights['model_performance']['recall']) / 
+                (insights['model_performance']['precision'] + insights['model_performance']['recall']),
+                insights['model_performance']['roc_auc']
+            ]
+        })
+        metrics_df['Value'] = metrics_df['Value'].apply(lambda x: f"{x:.3f}")
+        st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+    
+    # Churn by contract
+    if 'by_contract' in insights['churn_analysis']:
+        st.markdown("**Churn Rate by Contract Type**")
+        contract_df = pd.DataFrame(list(insights['churn_analysis']['by_contract'].items()),
+                                   columns=['Contract', 'Churn Rate'])
+        contract_df['Churn Rate'] = contract_df['Churn Rate'] * 100
+        
+        fig = px.bar(contract_df, x='Contract', y='Churn Rate',
+                    color='Churn Rate', color_continuous_scale='Reds',
+                    title='Churn Rate by Contract Type')
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Churn by tenure
+    if 'by_tenure' in insights['churn_analysis']:
+        st.markdown("**Churn Rate by Tenure Group**")
+        tenure_df = pd.DataFrame(list(insights['churn_analysis']['by_tenure'].items()),
+                                columns=['Tenure Group', 'Churn Rate'])
+        tenure_df['Churn Rate'] = tenure_df['Churn Rate'] * 100
+        
+        fig = px.line(tenure_df, x='Tenure Group', y='Churn Rate',
+                     markers=True, title='Churn Rate by Tenure')
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Download insights
+    st.subheader("📥 Download Results")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Download processed data
+        csv = df_processed.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Processed Data (CSV)",
+            data=csv,
+            file_name=f"processed_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+    
+    with col2:
+        # Download insights summary
+        insights_text = f"""
+ChurnGuard Analytics - Processing Summary
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+DATA SUMMARY:
+- Total Customers: {insights['data_summary']['total_customers']:,}
+- Churned: {insights['data_summary']['churned']:,}
+- Retained: {insights['data_summary']['retained']:,}
+- Churn Rate: {insights['data_summary']['churn_rate']:.1%}
+
+MODEL PERFORMANCE:
+- Best Model: {insights['model_performance']['best_model']}
+- Accuracy: {insights['model_performance']['accuracy']:.1%}
+- ROC-AUC: {insights['model_performance']['roc_auc']:.3f}
+- Precision: {insights['model_performance']['precision']:.3f}
+- Recall: {insights['model_performance']['recall']:.3f}
+
+KEY FINDINGS:
+"""
+        for finding in insights['key_findings']:
+            insights_text += f"- {finding}\n"
+        
+        st.download_button(
+            label="📥 Download Insights Summary (TXT)",
+            data=insights_text,
+            file_name=f"insights_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            mime="text/plain"
+        )
 
 if __name__ == "__main__":
     main()

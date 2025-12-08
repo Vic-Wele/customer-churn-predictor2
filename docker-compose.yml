@@ -53,7 +53,73 @@ services:
       - zookeeper_data:/var/lib/zookeeper
     restart: unless-stopped
 
+  # Hadoop HDFS - NameNode
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: churn-namenode
+    ports:
+      - "9870:9870"  # NameNode Web UI
+      - "9000:9000"   # HDFS port
+    environment:
+      - CLUSTER_NAME=churnguard
+    volumes:
+      - namenode_data:/hadoop/dfs/name
+    restart: unless-stopped
+
+  # Hadoop HDFS - DataNode
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: churn-datanode
+    ports:
+      - "9864:9864"  # DataNode Web UI
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+    volumes:
+      - datanode_data:/hadoop/dfs/data
+    depends_on:
+      - namenode
+    restart: unless-stopped
+
+  # Apache Spark - Master
+  spark-master:
+    image: bitnami/spark:3.5
+    container_name: churn-spark-master
+    ports:
+      - "8080:8080"   # Spark Master Web UI
+      - "7077:7077"   # Spark Master port
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - spark_data:/opt/bitnami/spark
+    restart: unless-stopped
+
+  # Apache Spark - Worker
+  spark-worker:
+    image: bitnami/spark:3.5
+    container_name: churn-spark-worker
+    ports:
+      - "8081:8081"   # Spark Worker Web UI
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    depends_on:
+      - spark-master
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   cassandra_data:
   zookeeper_data:
+  namenode_data:
+  datanode_data:
+  spark_data:
