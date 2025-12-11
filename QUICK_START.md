@@ -1,6 +1,6 @@
 # ChurnGuard Platform - Quick Start Guide
 
-## 🚀 Starting Everything from Scratch
+## Starting Everything from Scratch
 
 ### Step 1: Start VM and Login
 1. Open VirtualBox
@@ -55,7 +55,7 @@ python src/db_hdfs.py --test
 
 ---
 
-## 📊 Running the Dashboard
+## Running the Dashboard
 
 ### Option 1: Dashboard Only (Recommended for Demo)
 ```bash
@@ -66,11 +66,11 @@ streamlit run app.py
 **Access in browser:** http://localhost:8501
 
 **Dashboard Pages:**
-- 🏠 Overview - Key metrics and business impact
-- 🔍 Customer Lookup - Predict churn for individual customers
-- ⚠️ High-Risk Customers - Find customers likely to churn
-- 📈 Analytics - Data visualizations and trends
-- 📤 Upload & Process - Upload new CSV files, process data, train models, and generate insights
+- Overview - Key metrics and business impact
+- Customer Lookup - Predict churn for individual customers
+- High-Risk Customers - Find customers likely to churn
+- Analytics - Data visualizations and trends
+- Upload & Process - Upload new CSV files, process data, train models, and generate insights
 
 ---
 
@@ -139,7 +139,7 @@ python src/verify_data.py
 
 ---
 
-## 📓 Opening Jupyter Notebooks
+## Opening Jupyter Notebooks
 ```bash
 cd ~/churnguard-platform
 jupyter notebook --no-browser --ip=0.0.0.0 --port=8888
@@ -155,7 +155,7 @@ jupyter notebook --no-browser --ip=0.0.0.0 --port=8888
 
 ---
 
-## 🔄 Reprocessing Data (if needed)
+## Reprocessing Data (if needed)
 
 ### Re-run Data Processing Pipeline
 
@@ -197,7 +197,7 @@ python src/ingest.py --tickets 50
 
 ---
 
-## 🛑 Stopping Everything
+## Stopping Everything
 
 ### Stop Dashboard/API
 - Press `Ctrl + C` in the terminal where it's running
@@ -214,7 +214,7 @@ docker compose down
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Dashboard won't start
 ```bash
@@ -346,7 +346,7 @@ ls -lh data/models/
 
 ---
 
-## 📁 Important File Locations
+## Important File Locations
 ```
 churnguard-platform/
 ├── data/
@@ -379,7 +379,7 @@ churnguard-platform/
 └── README.md              # Main documentation
 ```
 
-## 🌐 Web UIs
+## Web UIs
 
 **Access these in your browser:**
 - **HDFS NameNode UI:** http://localhost:9870
@@ -440,7 +440,7 @@ python src/predict.py --batch <ID1> <ID2> # Batch prediction
 
 ---
 
-## 🆘 Emergency Commands
+## Emergency Commands
 
 ### If everything is broken:
 ```bash
@@ -472,7 +472,7 @@ docker compose up -d    # Restart fresh
 
 ---
 
-## 📧 Support
+## Support
 
 **Before demo day:**
 - Test everything at least once
@@ -489,4 +489,4 @@ docker compose up -d    # Restart fresh
 
 **Created:** November 2025  
 **Platform Version:** 1.0  
-**Status:** Production Ready ✅
+**Status:** Production Ready 
